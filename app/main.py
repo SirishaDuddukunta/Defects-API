@@ -11,12 +11,12 @@ data = load_defect_data()
 def get_products():
     return {"products": data['product_id'].unique().tolist()}
 
-@app.get("/defects", tags=["Defects"], summary="Filter defects")
+@app.get("/defects")
 def filter_defects(
-    product_id: Optional[str] = Query(None, description="Filter by product ID"),
-    severity: Optional[str] = Query(None, description="Filter by severity"),
-    start_date: Optional[date] = Query(None, description="Start date (YYYY-MM-DD)"),
-    end_date: Optional[date] = Query(None, description="End date (YYYY-MM-DD)")
+    product_id: Optional[str] = Query(None),
+    severity: Optional[str] = Query(None),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
 ):
     df = load_defect_data()
 
@@ -24,34 +24,52 @@ def filter_defects(
         df = df[df["product_id"] == product_id]
     if severity:
         df = df[df["severity"] == severity]
-    if start_date:
-        df = df[df["defect_date"] >= start_date]
-    if end_date:
-        df = df[df["defect_date"] <= end_date]
+    if from_date:
+        from_dt = pd.to_datetime(from_date)
+        df = df[df["defect_date"] >= from_dt]
+    if to_date:
+        to_dt = pd.to_datetime(to_date)
+        df = df[df["defect_date"] <= to_dt]
 
     return df.to_dict(orient="records")
 
 @app.get("/summary")
 def get_summary(
-    products: list[str] | None = Query(None),
-    from_date: str | None = None,
-    to_date: str | None = None
+    products: Optional[list[str]] = Query(default=None),
+    defect_types: Optional[list[str]] = Query(default=None),
+    locations: Optional[list[str]] = Query(default=None),
+    from_date: Optional[str] = Query(default=None),
+    to_date: Optional[str] = Query(default=None),
 ):
     df = data.copy()
+
+    # 🧮 Apply filters
     if products:
         df = df[df["product_id"].isin(products)]
+    if defect_types:
+        df = df[df["defect_type"].isin(defect_types)]
+    if locations:
+        df = df[df["defect_location"].isin(locations)]
     if from_date:
         df = df[df["defect_date"] >= pd.to_datetime(from_date)]
     if to_date:
         df = df[df["defect_date"] <= pd.to_datetime(to_date)]
 
-    summary = df.groupby("product_id").agg(
-        total_defects=("defect_id", "count"),
-        total_repair_cost=("repair_cost", "sum"),
-    )
+    result = []
 
-    severity_counts = df.groupby(["product_id", "severity"]).size().unstack(fill_value=0)
-    avg_cost_severity = df.groupby(["product_id", "severity"])["repair_cost"].mean().unstack(fill_value=0)
+    for pid, group in df.groupby("product_id"):
+        total_defects = len(group)
+        total_repair_cost = group["repair_cost"].sum()
 
-    result = summary.join(severity_counts, rsuffix="_count").join(avg_cost_severity, rsuffix="_avg_cost")
-    return result.reset_index().to_dict(orient="records")
+        severity_counts = group["severity"].value_counts().to_dict()
+        average_costs = group.groupby("severity")["repair_cost"].mean().round(2).to_dict()
+
+        result.append({
+            "product_id": pid,
+            "total_defects": total_defects,
+            "total_repair_cost": round(total_repair_cost, 2),
+            "severity_counts": severity_counts,
+            "average_costs": average_costs
+        })
+
+    return result
