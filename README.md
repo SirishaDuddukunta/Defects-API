@@ -1,4 +1,4 @@
-# Defect Explorer API
+# Defect Explorer using FastAPI
 
 ## Project Structure
 - `app/` - API logic, data processing
