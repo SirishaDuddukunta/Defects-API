@@ -21,7 +21,7 @@ uvicorn app.main:app --reload
 3. Docker:
 ```bash
 docker build -t defect-api .
-docker run -p 8000:8000 defect-api
+docker run -itd --name defects-api -p 8000:8000 defects-api
 ```
 
 ## Example API Usage
